@@ -1,0 +1,639 @@
+---
+title: "Bivariate Extreme Value Analysis Tutorial in R"
+author: "Namitha Viona Pais, Nalini Ravishanker and James O'Donnell"
+header-includes:
+   - \usepackage{cases}
+   - \usepackage{amsmath}
+   - \usepackage{natbib}
+   - \usepackage{titlesec}
+date: "`r Sys.Date()`"
+output:
+  bookdown::pdf_document2:
+    toc: true
+    toc_depth: 6
+number_sections: true
+
+bibliography: references.bib
+---
+
+\newpage
+
+```{r setup, include=FALSE,warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+\newpage
+
+
+# Introduction
+
+Bivariate extreme value analysis is a statistical method used to model the joint behavior of two variables, assuming that they follow an extreme value distribution. This method is commonly used in the analysis of extreme events, such as floods or storms, where the occurrence of one extreme event may be related to the occurrence of another. By modeling the joint behavior of these events, bivariate extreme value analysis can provide valuable insights into the likelihood and severity of extreme events, and can help in the development of more effective risk management strategies.
+
+This file is a tutorial that provides a practical guide on how to implement various bivariate extreme value approaches using the R programming language. The tutorial covers different methods for modeling the joint behavior of two variables, including the Peak-Over-Threshold by GPD approach, the copula-based approach,maxima approach and the  L-comoments approach. The tutorial includes step-by-step instructions on how to fit these models using R, and provides examples and illustrations to help understand the underlying concepts. By following this tutorial, users can gain a deeper understanding of bivariate extreme value analysis and learn how to apply these methods to their own data.
+
+# Input
+
+In bivariate extreme value analysis, the input consists of observed data on two variables. The analysis focuses on studying the joint distribution of these variables in the tail regions, where extreme events occur.
+
+## Data Description
+Using 3 simulated data sets (high dependence,low dependence,intermediate dependence) and bivariate sea level and precipitation data, we explore the following bivariate extreme value approaches.
+
+We examine various bivariate extreme value approaches using a combination of simulated and real-world data. Specifically, we employ three simulated datasets that vary in their level of dependence - high, low, and intermediate - as well as real-world bivariate data on sea level and precipitation. Through these datasets, we aim to explore the effectiveness of different bivariate extreme value methods. By examining the results of these methods on both simulated and real-world data, we hope to gain insights into the strengths and limitations of each approach and their applicability in different contexts.
+
+Here is the summary of the  bivariate sea level and precipitation data.
+```{r,include=FALSE,warning=FALSE}
+library(evd)
+SimData<-function(n,dep,model)
+{
+  set.seed(3)
+  Data<-rbvevd(n, dep = dep, model = model)
+  return(Data)
+}
+Data1<-SimData(1000,0.1,"log")
+Data2<-SimData(1000,0.9,"log")
+Data3<-SimData(1000,0.5,"log")
+colnames(Data1)=colnames(Data2)=colnames(Data3)=c("X","Y")
+setwd("/Users/namithapais/Documents/Documents - Namitha’s MacBook Pro/MarineScience/Fall22/")
+load(file = "DataSikorsky.rda")
+load(file = "BivariateTS_precip_waterlev.rda")
+summary(Data)
+library(imputeTS)
+Data[,2]<-na_interpolation(Data[,2])
+Data[,3]<-na_interpolation(Data[,3])
+Data4<-Data[,2:3]
+```
+
+```{r,echo=FALSE,warning=FALSE}
+summary(Data4)
+```
+Here is the plot of the simulated datasets and the bivariate sea level and precipitation data.
+```{r,echo=FALSE,warning=FALSE}
+par(mfrow=c(2,2))
+plot(Data1,pch=19,cex=0.3,main="high dependence")
+plot(Data2,pch=19,cex=0.3,main="low dependence")
+plot(Data3,pch=19,cex=0.3,main="intermediate dependence")
+plot(Data4,pch=19,cex=0.3,main="Waterleve-Precip data")
+```
+
+
+
+# Goal
+
+The goal is to evaluate the dependence between the two variables in the tail region and obtain the return level curves for probability levels $p=0.9,0.95,0.99$.
+
+
+# Peak-Over-Threshold by GPD approach
+
+The Peak-Over-Threshold (POT) approach using the Generalized Pareto Distribution (GPD) is a popular method in extreme value analysis for modeling exceedances over a high threshold \cite{coles2001,borsos2021application}. In R, there are several packages that can be used for this purpose, including \textit{evd}, \textit{evir}, \textit{POT}, and \textit{extRemes}. These packages provide functions for fitting GPD models to exceedances, estimating parameters, and making predictions. The choice of package and specific functions used will depend on the specific analysis needs and the characteristics of the data being analyzed. For a joint distribution $F(x,y)$ of $(X, Y)$, the tail of the marginal distribution function is approximated by a GPD distribution for suitable thresholds $u_x$ and $u_y$.
+
+By letting $\Tilde{X}=-\Biggl(\log \Bigg\{ 1-\xi_x\Bigg[1+\dfrac{\xi_x(X-u_x)}{\sigma_x}\Bigg]^{-1/\xi_x}\Bigg\}\Biggl)^{-1}$ and $\Tilde{Y}=-\Biggl(\log \Bigg\{ 1-\xi_y\Bigg[1+\dfrac{\xi_y(Y-u_y)}{\sigma_y}\Bigg]^{-1/\xi_y}\Bigg\}\Biggl)^{-1}$, the mariginal distribution of $\Tilde{X}$ and $\Tilde{Y}$ is approximately standard Fr\'echet for $X \geq u_x$ and $Y > u_y$.
+Then we have  $F(x,y) \rightarrow G(x,y)= exp \{- V(\Tilde{x},\Tilde{y})\}$ for $x>u_x, y>u_y$ where
+\begin{equation} 
+    V(x,y)= 2 \int_{0}^{1} \max \Big(\dfrac{\omega}{x}, \dfrac{1-\omega}{y} \Big) dH(\omega),
+    \label{Veq}
+\end{equation}
+and $H$ is a distribution function on $[0,1]$ satisfying the mean constraint
+\begin{align}
+     \int_{0}^{1} \omega  dH(\omega)=1/2 
+\end{align}
+
+There are a few choices of parametric families for $H$ on $[0,1]$ whose mean is equal to $0.5$ for every value of the parameter which includes logistic family,  bilogistic family, negative logistic family, Husler-Reiss etc. The most popular choice is logistic family $h(\omega)$ defined as,
+\begin{align}
+h(\omega)= \dfrac{1}{2} (\alpha^{-1}-1)\{\omega(1-\omega)\}^{-1-1/\alpha} \{\omega^{-1/\alpha}+(1-\omega)^{-1/\alpha} \}^{\alpha-2}
+\end{align}
+for $0<\omega<1$.  Logistic family is popular due to the interpretation of $\alpha$ where $\alpha \rightarrow 1$ corresponds to independent variables and $\alpha \rightarrow 0$ corresponds to perfectly dependent variables.
+
+Give the choice of the parametric familiy $H$, the likelihood function (censored) is given by,
+
+\begin{align}
+    L(\boldsymbol{\theta}\mid (x_1,y_1),\ldots (x_n,y_n))= \prod_{i=1}^n \Psi(\boldsymbol{\theta}\mid (x_i,y_i))
+\end{align}
+where,
+
+\begin{equation}
+\Psi(\boldsymbol{\theta}\mid(x,y)) = \left\{
+\begin{aligned}
+  &\frac{\delta^2 F}{\delta x \delta y}\bigg|_{(x,y)}, && (x,y)\in [u_x,\infty)\times[u_y,\infty) \\
+  &\frac{\delta F}{\delta x}\bigg|_{(x,u_y)}, && (x,y)\in [u_x,\infty)\times(-\infty,u_y) \\
+  &\frac{\delta F}{\delta y}\bigg|_{(u_x,y)}, && (x,y)\in(-\infty,u_x)\times[u_y,\infty) \\
+  &F(u_x,u_y), && (x,y)\in(-\infty,u_x)\times(-\infty,u_y)
+\end{aligned}
+\right.
+\end{equation}
+
+## Selecting the threshold 
+
+In order to model $F(z_1,z_2)$ for $z_1 > u_1$ and $z_2 > u_2$, it is necessary to select appropriate thresholds $u_1$ and $u_2$. We discuss two methods to select the threshold values.
+
+### Bivariate Threshold Choice Plot 
+In their work \cite{beirlant2006statistics}, the authors propose selecting a single threshold $u^*$ based on the function $r(z)$, where $r(z) = x_1(z_1) + x_2(z_2)$ and $x_j(z_j) = \frac{-1}{\log F_j(z_j)}$ for $j = 1, 2$, where $F_j$ is estimated empirically. One approach for selecting the threshold is to use a spectral measure plot, where integers $k=1,2,\ldots n-1$ are plotted against $(k/n)r_{(n-k)}$. The largest value of $k$, denoted as $k_0$, for which $(k/n)r_{(n-k)}$ is close to 2 determines the pair of threshold values to be used.
+
+The R package \textit{evd} provides the function \textit{bvtcplot} for creating a bivariate threshold selection plot. This plot helps to identify appropriate threshold values for extreme value analysis of bivariate data. The function takes in the data for which the plot needs to be generated and the threshold selected is given as an output $k0$.
+
+
+```{r,include=FALSE,warning=FALSE}
+library(evd)
+k1 <- bvtcplot(Data1,pch=19,cex=0.1)$k0
+k2 <- bvtcplot(Data2,pch=19,cex=0.1)$k0
+k3 <- bvtcplot(Data3,pch=19,cex=0.1)$k0
+#Threshold for Data1
+thresh1<-apply(Data1, 2, sort, decreasing = TRUE)[(k1+5)/2,]
+thresh1
+m1<-evd::fbvpot(Data1, thresh1, model = "log")
+m1$param
+plot(m1,which=3,p=c(0.9,0.95,0.99),col="orange",pch=19,cex=0.3)
+
+#Threshold for Data2
+thresh2<-apply(Data2, 2, sort, decreasing = TRUE)[(k2+5)/2,]
+thresh2
+m2<-evd::fbvpot(Data2, thresh2, model = "log")
+m2$param
+plot(m2,which=3,p=c(0.9,0.95,0.99),col="orange",pch=19,cex=0.3)
+
+
+#Threshold for Data3
+thresh3<-apply(Data3, 2, sort, decreasing = TRUE)[(k3+5)/2,]
+thresh3
+m3<-evd::fbvpot(Data3, thresh3, model = "log")
+m3$param
+plot(m3,which=3,p=c(0.9,0.95,0.99),col="orange",pch=19,cex=0.3)
+
+```
+
+```{r,warning=FALSE,fig.width=5,fig.height=5}
+library(evd)
+k4 <- bvtcplot(Data4,pch=19,cex=0.1)$k0
+#Threshold for Data4
+thresh4<-round(apply(Data4, 2, sort, decreasing = TRUE)[(k4+5)/2,],2)
+thresh4
+```
+The threshold estimated using this method is $ 0.19 $ for Precipitation and $1.29$ for Water level.
+
+###  Bayesian analysis of extreme events with threshold estimation for univariate data
+
+The package \textit{extrememix} \citep{behrens2004bayesian} enables fitting a Bayesian model to  fit data characterized by extremal events where a threshold is directly estimated. The threshold is simply considered as another model parameter. This package performs inference by leveraging all available observations. It assumes that observations below the threshold are generated from a specific distribution, while observations above the threshold are generated from a GPD. The threshold parameter estimated from the two univariate models can also be considered for the bivariate GPD analysis.
+
+```{r}
+#library(extrememix)
+#p1<-fggpd(Data4[,1], it = 25000, burn = 5000, thin = 25)
+#summary(p1)
+#p2<-fggpd(Data4[,2], it = 25000, burn = 5000, thin = 25)
+#summary(p2)
+```
+
+The threshold estimated using this method is $0.39$ for Precipitation and $1.44$ for Water level.
+
+To fit the bivariate Generalized Pareto Distribution (GPD) data, we utilize the threshold obtained from the Bivariate Threshold Choice Plot. The analysis can be re-evaluated using the thresholds obtained from the \textit{extrememix} package.
+
+## Implementing R package \textit{evd}
+
+The \textit{fbvpot} function used to fit a bivariate POT model takes the data as its first argument and the threshold values for each variable as the second argument. The model argument specifies the parametric model to be used in the analysis. In the example given, $model = log$ specifies that the logarithmic model should be used. The output of the \textit{fbvpot} function is a list object containing various results from the analysis, such as the estimated parameters of the distribution, the standard errors of the parameters, and the value of the log-likelihood function. For instance, the command \textit{param} gives the estimated parameters for the fitted bivariate GPD model. The \textit{plot} function can be used to generate a bivariate POT model fit plot, with $which=3$ indicating the return level curves, and $p=c(0.9,0.95,0.99)$ specifying the probability levels for the return levels.
+
+```{r}
+m4<-evd::fbvpot(Data4, thresh4, model = "log")
+m4$param
+plot(m4,which=,p=c(0.9,0.95,0.99),col="orange",pch=19,cex=0.3,
+     ylab="Daily Maximum Sea-Level",xlab="Precipitation")
+```
+
+## Implementing R package \textit{evir}
+```{r,warning=FALSE,include=FALSE}
+library(evir)
+m11<-gpdbiv(Data1[,1],Data1[,2],u1=thresh1[1],u2=thresh1[2])
+m11$alpha
+m12<-gpdbiv(Data2[,1],Data2[,2],u1=thresh2[1],u2=thresh2[2])
+m12$alpha
+m13<-gpdbiv(Data3[,1],Data3[,2],u1=thresh3[1],u2=thresh3[2])
+m13$alpha
+```
+
+The function \textit{gpdbiv} in the R package \textit{evir} \cite{smith1994multivariate} used to fit a bivariate POT model requires input data along with $u1$ and $u2$ as arguments, representing the threshold values for the first and second variables in the analysis.
+After fitting the model, model estimates by calling $alpha$, $par.ests1$ and $par.ests2$. These parameters are estimates of the parameters in the GPD distribution for each variable, which can be used to calculate return levels and other extreme value statistics.
+```{r,warning=FALSE}
+library(evir)
+head(Data4[,1])
+m14<-gpdbiv(Data4[,1],Data4[,2],u1=thresh4[1],u2=thresh4[2],global=TRUE)
+m14$alpha
+m14$par.ests1
+m14$par.ests2
+```
+
+```{r,echo=FALSE,warning=FALSE}
+quant99<-function(Data)
+{
+  q1<-quantile(Data[,1],probs=c(0.99))
+  q2<-quantile(Data[,2],probs=c(0.99))
+  return=c(q1,q2)
+}
+```
+
+```{r,warning=FALSE,include=FALSE}
+q1<-quant99(Data1)
+interpret.gpdbiv(m11,q1[1],q1[2])
+q2<-quant99(Data2)
+interpret.gpdbiv(m12,q2[1],q2[2])
+q3<-quant99(Data3)
+interpret.gpdbiv(m13,q3[1],q3[2])
+
+```
+The funcion \textit{interpret.gpdbiv}  takes the fitted gpdbiv model, along with the $99\%$ quantiles of the marginal distributions, and returns the $99\%$ joint return level estimates for the two variables based on the fitted model. This allows us to estimate the value of both variables that we would expect to be exceeded simultaneously with a $1\%$ chance of occurrence, which is a useful measure in the context of extreme value analysis.
+```{r,warning=FALSE}
+q4<-quant99(Data4)
+interpret.gpdbiv(m14,q4[1],q4[2])
+```
+
+## Implementing R package \textit{POT}
+
+```{r,warning=FALSE,include=FALSE}
+#POT
+par(mfrow=c(2,2))
+library(POT)
+m21 <- fitbvgpd(Data1, thresh1, "log")
+m21$param
+plot(m21,which=2)
+m22 <- fitbvgpd(Data2, thresh2, "log")
+m22$param
+plot(m22,which=2)
+m23 <- fitbvgpd(Data3, thresh3, "log")
+m23$param
+plot(m23,which=2)
+```
+
+The \textit{fitbvgpd} \cite{smith1997markov} used to fit a bivariate POT model takes the data and threshold values as inputs. In addition, logistic model is specified by providing the argument $log$. The $param$ command returns the estimated parameters of the bivariate GPD model fit and the \textit{plot} function generates a diagnostic plot of the fitted model, which can help to assess the adequacy of the model fit where $which=2$ provides the return level plot.
+```{r,warning=FALSE}
+m24 <- fitbvgpd(Data4, thresh4, "log")
+m24$param
+plot(m24,which=2,pch=20,col="grey",p=c(0.9,0.95,0.99))
+```
+
+## Implementing R package \textit{extRemes}
+```{r,warning=FALSE,include=FALSE}
+library(extRemes)
+m31 <-extRemes::fbvpot( x = Data1,threshold =thresh1,
+                        dep.model = "logistic")
+m31$fit$par
+m32 <-extRemes::fbvpot( x = Data2,threshold =thresh2,
+                        dep.model = "logistic")
+m32$fit$par
+m33 <-extRemes::fbvpot( x = Data3,threshold =thresh3,
+                        dep.model = "logistic")
+m33$fit$par
+```
+
+The function \textit{fbvpot} from the \textit{extRemes} package  \cite{beirlant2006statistics} is used to fit a bivariate POT model with inputs as the data, threshold and dependence model which is chosen as  logistic in this case.
+```{r,warning=FALSE}
+library(extRemes)
+m34 <-extRemes::fbvpot( x = Data4,threshold =thresh4,
+                        dep.model = "logistic")
+m34$fit$par
+```
+
+## Conclusion
+
+The dependence parameter estimated using each of the packages is shown in Table \ref{table1}
+
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{||c c c c c||} 
+ \hline
+    & Data (low dep) & Data (intermediate dep) & Data (high dep) & Real data \\ [0.5ex] 
+ \hline\hline      
+  \textit{evd}      &  $0.8926$  & $0.5865$ & $0.1170$ & $0.8910$ \\
+  \textit{evir}     &  $0.7801$ & $0.5856$ & $0.1191$ & $0.7964$ \\
+  \textit{POT}      &  $0.8925$  & $0.5863$ & $0.1179$ & $0.7500$ \\
+  \textit{extRemes} &  $0.7267$ & $0.5107$ & $0.1160$ & $0.7215$ \\ [1ex] 
+ \hline
+\end{tabular}
+\caption{Dependence parameter obtained from Peak-Over-Threshold by GPD approach}
+\label{table1}
+\end{table}
+
+The variation in $\alpha$ values across different packages is due to the differences in numerical optimization settings. However, despite these variations, the values still lead to the same conclusion.
+
+On the simulated data the interpretation of dependence parameter $\alpha$ matches with the true dependence. For the real data, the value of $\alpha$ indicates that the water level and precipitation are weakly dependent in the tail regions.
+
+The plot based on the  non-parametric estimates for quantile curves for $p=0.90,0.95,0.99$
+is shown below.
+```{r}
+qcbvnonpar(p=c(0.9,0.95,0.99), data = Data4, epmar = TRUE,
+           plot=TRUE,cex=0.3,pch=19,col="orange",
+           ylab="Daily Maximum Sea-Level",xlab="Precipitation")
+```
+
+# Copula approach
+
+## Fitting the copula in R.
+
+When working with extreme values, copulas are a powerful tool for modeling the dependence between two or more variables. In R, the copula package provides a range of functions and methods for working with copulas, including estimation, simulation, and goodness-of-fit testing.
+
+### Implementing R package \textit{evCopula}
+The \textit{evCopula} class in the copula package is a class of all extreme-value copulas. There are currently five subclasses that inherit from evCopula: \textit{galambosCopula}, \textit{huslerReissCopula}, \textit{tawnCopula}, \textit{tevCopula}, and \textit{gumbelCopula}. Among these subclasses, gumbelCopula is an Archimedean copula, which is also documented on the page for the archmCopula class.
+
+As an illustration we consider Gumbel copula fir to the bivariate water level precipitation data. The Gumbel copula (a.k.a. Gumbel-Hougard copula) is an asymmetric Archimedean copula, exhibiting greater dependence in the positive tail than in the negative. This copula is given by:
+\begin{equation} 
+   C_{\alpha}(u,v)=\exp{\Big\{-[(-\ln u )^{\alpha}+(-\ln v)^{\alpha}]^{\frac{1}{\alpha}}}\Big\}
+\end{equation}
+where 
+$\alpha \in [1,\infty)$
+
+The relationship between between Kendall's $\tau$ and the Gumbel copula parameter $\alpha$ is given by
+\begin{equation} 
+   \alpha=\dfrac{1}{1-\tau}
+\end{equation}
+
+```{r,warning=FALSE}
+library(copula)
+library(VineCopula)
+gumbel.cop <- gumbelCopula(3, dim=2)
+set.seed(500)
+m <- pobs(as.matrix(Data4))
+fit1 <- fitCopula(gumbel.cop,m,method='ml')
+coef(fit1)
+BiCopPar2Tau(4,coef(fit1))
+```
+
+To fit a copula to extreme value data in R, the first step is typically to transform the data to uniform marginals using the \textit{pobs} function. The copula can then be estimated using the \textit{fitCopula} function, which takes as input the copula object and the uniform data. Once a copula has been fitted, it can be used for simulations, to estimate dependence measure Kendall's tau, and to compute return levels.
+
+### Implementing R package \textit{VineCopula}
+One way to select the copula family is to use the function \textit{BiCopSelect} from the package \textit{VineCopula} which selects the copula family that best fits the observed dependence structure between u and v using the Bivariate Copula Selection method. The $familyset=NA$ argument specifies that all available copula families should be considered. In this instance, a bivariate Gaussian coupula is selected which is given by,
+\begin{equation} 
+C_R(u_1, u_2) = \Phi_R(\Phi^{-1}(u_1), \Phi^{-1}(u_2))
+\end{equation}
+
+In this expression, $C_R(u_1, u_2)$ represents the Gaussian copula, $\Phi_R$ is the cumulative distribution function (CDF) of the standard bivariate normal distribution, and $\Phi^{-1}$ denotes the inverse CDF of the standard normal distribution. The variables $u_1$ and $u_2$ typically represent the marginal probabilities or quantiles associated with the two random variables in the copula.
+
+Based on the copula family selected we use \textit{fitCopula} to fit copula to the observed data using maximum likelihood estimation (MLE). The \textit{coef} function provides the estimated correlation coefficient between the two variables. If we use a gumbel copula to fit the data the function  \textit{coef} provides the tail dependence parameter estimate.
+Then based on the copula and its estimated parameter, we can evaluate the theoretical Kendall's tau using the function \textit{BiCopPar2Tau}.
+
+```{r,echo=FALSE,eval=FALSE,include=FALSE}
+library(VineCopula)
+u<- pobs(as.matrix(Data1))[,1]
+v <- pobs(as.matrix(Data1))[,2]
+selectedCopula <- BiCopSelect(u,v,familyset=NA)
+selectedCopula
+myCop <-  gumbelCopula(par = 9.94,dim = 2)
+set.seed(500)
+m <- pobs(as.matrix(Data1))
+fit <- fitCopula(myCop,m,method='ml')
+coef(fit)
+BiCopPar2Tau(4,coef(fit))
+
+u<- pobs(as.matrix(Data2))[,1]
+v <- pobs(as.matrix(Data2))[,2]
+selectedCopula <- BiCopSelect(u,v,familyset=NA)
+selectedCopula
+myCop <- frankCopula(par = 1.41,dim = 2)
+set.seed(500)
+m <- pobs(as.matrix(Data2))
+fit <- fitCopula(myCop,m,method='ml')
+coef(fit)
+BiCopPar2Tau(5,coef(fit))
+
+u<- pobs(as.matrix(Data3))[,1]
+v <- pobs(as.matrix(Data3))[,2]
+selectedCopula <- BiCopSelect(u,v,familyset=NA)
+selectedCopula
+myCop <- gumbelCopula(par = 2.01,dim = 2)
+set.seed(500)
+m <- pobs(as.matrix(Data3))
+fit <- fitCopula(myCop,m,method='ml')
+```
+
+```{r}
+library(VineCopula)
+u<- pobs(as.matrix(Data4))[,1]
+v <- pobs(as.matrix(Data4))[,2]
+selectedCopula <- BiCopSelect(u,v,familyset=NA)
+selectedCopula
+myCop <- normalCopula(dim = 2)
+set.seed(500)
+m <- pobs(as.matrix(Data4))
+fit <- fitCopula(myCop,m,method='ml')
+coef(fit)
+BiCopPar2Tau(1,coef(fit))
+```
+
+## Conclusion
+
+The Copula fit for each of the data and the corresponding Kendals $\tau$ estimated is shown in Table \ref{table2}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{||c c c c c||} 
+ \hline
+    & Data (low dep) & Data (intermediate dep) & Data (high dep) & Real data \\ [0.5ex] 
+ \hline\hline      
+   \textit{Copula Selected} &  $Frank$ & $Gumbel$ & $Gumbel$ & $Gaussian$ \\ 
+  \textit{Kendals $\tau$} &  $0.1528$ & $0.5012$ & $0.8994$ & $0.1738$ \\ [1ex] 
+ \hline
+\end{tabular}
+\caption{Kendals $\tau$ obatined from the best copula fit}
+\label{table2}
+\end{table}
+The Kendall's $\tau$ estimated from both the Gumbel copula is $0.1249$ and from the Gaussian copula is $0.1738$. This indicates low dependence between the two variables. The contour plots obtained from the copula fits is shown below.
+
+```{r,warning=FALSE}
+myCop <- normalCopula(coef(fit),dim = 2)
+contour(myCop, pCopula,main="Gaussian Copula")
+```
+
+
+# Maxima approach
+The maxima approach for bivariate extreme value analysis is a statistical method used to model the joint distribution of two variables based on their maximum values. The approach assumes that the variables follow a multivariate extreme value distribution, and that the joint distribution can be estimated by considering the maximum values of each variable across a number of observations.
+
+We define
+$M_{x,n}= \underset{i=1,2,\ldots,n}{\max} \{X_i\}$ and $M_{y,n}= \underset{i=1,2,\ldots,n}{\max} \{Y_i\}$. Then, $\boldsymbol{M}_n=(M_{x,n},M_{y,n})$ is the vector of componentwise maxima which need not be an observed vector in the original series.
+Our goal is to estimate the distribution of $\boldsymbol{M}_n$ as $n \rightarrow \infty$.
+
+
+Since, $M_{x,n} \sim GEV(\mu_x,\sigma_x,\xi_x)$ and $M_{y,n} \sim GEV(\mu_y,\sigma_y,\xi_y)$, by letting $\Tilde{X}=\Bigg[1+ \dfrac{(X-\mu_x)}{\sigma_x}\Bigg]^{1/\xi_x}$  $\Tilde{Y}=\Bigg[1+ \dfrac{(Y-\mu_y)}{\sigma_y}\Bigg]^{1/\xi_y}$ will ave the standard Fr\'echet distribution. The following theorem can be used to estimate the joint distribution.
+
+\textbf{Theorem:}
+Let $\boldsymbol{M}_n^*=(M^*_{\Tilde{x},n}, M^*_{\Tilde{y},n})$ where ($\Tilde{X}_i$, $\Tilde{Y}_i$) are independent vectors with standard Fr\'echet  marginal distribution. Then if
+\begin{align}
+    P\{ M^*_{\Tilde{x},n} \leq x, M^*_{\Tilde{y},n} \leq y\} \overset{d}{\rightarrow} G(x,y),
+\end{align}
+where G is a non-degenerate distribution function, G has the form
+
+\begin{align}
+   G(x,y)= \exp\{-V(x,y)\}, x>0, y>0
+\end{align}
+where
+\begin{equation} 
+    V(x,y)= 2 \int_{0}^{1} \max \Big(\dfrac{\omega}{x}, \dfrac{1-\omega}{y} \Big) dH(\omega),
+    \label{Veq}
+\end{equation}
+and $H$ is a distribution function on $[0,1]$ satisfying the mean constraint
+\begin{align}
+     \int_{0}^{1} \omega  dH(\omega)=1/2 
+\end{align}
+
+
+## Implementing R package \textit{fbvevd}
+
+The \textit{fbvevd} function in the evd package in R is used to estimate the parametric fit of the bivariate extreme value distribution. It fits a bivariate EVD to the joint distribution of the maxima of two variables. We consider  a (symmetric) logistic extreme value distribution by setting $model=log$ and the function \textit{fitted} contains information on the fit which has a single dependence parameter and three parameters on each of the GEV margins.
+
+```{r,echo=FALSE,eval=FALSE,include=FALSE}
+xx <- rep(1:200, each = 5)
+data_grouped <- cbind(tapply(Data1[,1], xx, max), 
+                      tapply(Data1[,2], xx, max))
+colnames(data_grouped) <- colnames(Data1)
+summary(data_grouped)
+model1 <- fbvevd(data_grouped, model = "log",
+                 std.err = FALSE)
+fitted(model1)
+data_grouped <- cbind(tapply(Data2[,1], xx, max), 
+                      tapply(Data2[,2], xx, max))
+colnames(data_grouped) <- colnames(Data2)
+summary(data_grouped)
+model2 <- fbvevd(data_grouped, model = "log",
+                 std.err = FALSE)
+fitted(model2)
+data_grouped <- cbind(tapply(Data3[,1], xx, max), 
+                      tapply(Data3[,2], xx, max))
+colnames(data_grouped) <- colnames(Data3)
+summary(data_grouped)
+model3 <- fbvevd(data_grouped, model = "log",
+                 std.err = FALSE)
+fitted(model3)
+```
+
+```{r}
+xx <- rep(1:2801, each = 6)
+data_grouped <- cbind(tapply(Data4[,1], xx, max), 
+                      tapply(Data4[,2], xx, max))
+colnames(data_grouped) <- colnames(Data4)
+summary(data_grouped)
+model4 <- fbvevd(data_grouped, model = "log",std.err = FALSE)
+fitted(model4)
+```
+
+## Conclusion
+The dependence parameter estimated using maxima approach is shown in Table \ref{table3}
+\begin{table}[h!]
+\centering
+\begin{tabular}{||c c c c c||} 
+ \hline
+    & Data (low dep) & Data (intermediate dep) & Data (high dep) & Real data \\ [0.5ex] 
+ \hline\hline      
+  \textit{$\alpha$} &  $0.8916$ & $0.5360$ & $0.10519$ & $0.7500$ \\ [1ex] 
+ \hline
+\end{tabular}
+\caption{Dependece parameter $\alpha$ obtained from maxima approach}
+\label{table3}
+\end{table}
+
+
+On the simulated data the interpretation of dependence parameter $\alpha$ matches with the true dependence. For the real data, the value of $\alpha$ indicates that the water level and precipitation are weakly dependent in their maxima.
+
+The plot on quantile curves for $p=0.90,0.95,0.99$ is shown below.
+
+```{r}
+plot(model4, which = 5, pch = 20,p=c(0.90,0.95,0.99),
+     xlim=c(0,15),ylim=c(0,5),
+     col="orange",ylab="Daily Maximum Sea-Level",
+     xlab="Precipitation",cex=0.3)
+```
+
+
+# L-comoments—Multivariate Extensions of L-moments
+
+Multivariate L-moments, also known as L-comoments, extend the concept of L-moments to multivariate distributions. Introduced by \cite{serfling2007contribution}, L-comoments provide a framework for analyzing the joint behavior, dependence structure, and shape characteristics of multiple variables simultaneously.
+
+
+In the univariate setup,the $r^{th}$ population L-moment is defined as,
+
+\begin{align}
+  \lambda_r= r^{-1} \sum_{k=0}^{r-1} (-1)^k   \binom{r-1}{k} E(X_{r-k:r})
+\end{align}
+where $X_{k:n}$ represents $k^{th}$ order statistic in a sample of size $n$.
+
+Similarly in the bivariate setup,  the $r^{th}$ population L-comoment of $X^{[1]}$ wrt $X^{[2]}$ is defined as,
+\begin{align}
+  \lambda_r^{[12]}= r^{-1} \sum_{k=0}^{r-1} (-1)^k  \binom{r-1}{k} E(X_{r-k:r}^{[12]})
+\end{align}
+
+where $X_{r-k:r}^{[12]}$ indicates the element of $\{X_1^{(1)}, X_2^{(1)}, \ldots, X_n^{(1)}\}$  that is paired with $X_{r:n}^{(2)}$ and $E(X_{r-k:r}^{[12]})= n E(X_1^{(1)} \mid X_1^{(2)}=X_{r:n}^{(2)})$.
+
+\cite{serfling2007contribution} provides an unbiased sample estimator for $\lambda_r^{[12]}$  given by,
+
+
+\begin{align}
+  \hat \lambda_r^{[12]}= \dfrac{1}{n} \sum_{j=1}^{n} w_{j:n}^{(r)} x_{j:n}^{[12]}
+\end{align}
+
+where $x_{j:n}^{[12]}$ is the ordered sample and the weights  $w_{j:n}^{(r)}$ are computed as,
+\begin{align}
+w_{j:n}^{(r)}= \sum_{i=1}^{\min{ j-1,r-1}} (-1)^{r-1-i} \binom{r-1}{i} \binom{r-1+i}{i} \binom{j-1}{i} /\binom{n-1}{i}
+\end{align}
+
+Similarly we can define the estimator for the  $r^{th}$ L-comoment of  $X^{[2]}$ wrt $X^{[1]}$. An important characteristic of L-comoments is that they need not be symmetric.
+
+The L-comoment ratios in the form of $\tau_r^{[12]}=\frac{\lambda_r^{[12]}}{\lambda_2^{[1]}}$ or $\tau_r^{[21]}=\frac{\lambda_r^{[21]}}{\lambda_2^{[2]}}$ for $r \geq 2$ can be seen as analogous to the univariate L-moment ratios, $\tau_r$. Specifically, when $r = 2$, $\tau_2^{[12]}$ represents the L-correlation of $X^{[1]}$ with respect to $X^{[2]}$. On the other hand, when $r = 3$ and $r = 4$, $\tau_3^{[21]}$ and $\tau_3^{[21]}$ respectively represent the L-coskewness and L-cokurtosis of $X^{[2]}$ with respect to $X^{[1]}$. These L-comoment ratios \citep{asquith2011distributional} provide insights into the multivariate relationships, dependencies, and higher-order moments between the different components of the observed data, extending the analysis beyond the univariate setup.
+
+## Implementing R package \textit{lmomco}
+
+We utilize the \textit{lmomco} package in R to analyze the bivariate data consisting of precipitation and water level. The code generates a plot of the bivariate data and adds two rug plots in red color using the \textit{rug} function. These rug plots display the marginal distributions of each variable along their respective axes.
+
+
+The code then calculates the L-moment matrix of order 2 and stores it in the variable L2. By utilizing this matrix, the L-correlation between the two variables is computed using the \textit{Lcomoment.correlation} function. The resulting L-correlations are found to be $\tau_2^{[12]}=0.3160835$ and $\tau_2^{[21]}=0.2628868$. These values indicate a weak association between the variables.
+
+Furthermore, the code computes the L-moment matrix of order 3 and calculates the L-coskew between the two variables using the \textit{Lcomoment.coefficients} function. The obtained values are $\tau_3^{[12]}=0.07018642$ and $\tau_3^{[21]}=0.0307913$. Although the L-coskews differ slightly, they are close to zero. This suggests a symmetry of sorts in the co-movement of X with respect to Y and Y with respect to X.
+
+Overall, based on the L-correlations and L-coskews, the code indicates a weak association between the variables.
+
+```{r,warning=FALSE,eval=FALSE,include=FALSE}
+library(lmomco)
+Data1<-as.data.frame(Data1)
+L2 <- Lcomoment.matrix(Data1, k=2) # order 2 matrix
+Lcomoment.correlation(L2) # compute L-correlation
+L3 <- Lcomoment.matrix(Data1, k=3)
+Lcomoment.coefficients(L3,L2) # compute L-coskew
+
+Data2<-as.data.frame(Data2)
+L2 <- Lcomoment.matrix(Data2, k=2) # order 2 matrix
+Lcomoment.correlation(L2) # compute L-correlation
+L3 <- Lcomoment.matrix(Data2, k=3)
+Lcomoment.coefficients(L3,L2) # compute L-coskew
+
+library(lmomco)
+Data3<-as.data.frame(Data3)
+L2 <- Lcomoment.matrix(Data3, k=2) # order 2 matrix
+Lcomoment.correlation(L2) # compute L-correlation
+L3 <- Lcomoment.matrix(Data3, k=3)
+Lcomoment.coefficients(L3,L2) # compute L-coskew
+```
+
+```{r,warning=FALSE}
+library(lmomco)
+plot(Data4)
+rug(Data4$Precip, side=1, col=rgb(1,0,0,0.4))
+rug(Data4$MaxWaterLev, side=2, col=rgb(1,0,0,0.4))
+L2 <- Lcomoment.matrix(Data4, k=2) # order 2 matrix
+Lcomoment.correlation(L2) # compute L-correlation
+L3 <- Lcomoment.matrix(Data4, k=3)
+Lcomoment.coefficients(L3,L2) # compute L-coskew
+```
+
+## Conclusion
+
+The  L-correlation estimates for different datasets is shown in Table \ref{table4}
+\begin{table}[h]
+\centering
+\begin{tabular}{||c c c c c||} 
+ \hline
+    & Data (low dep) & Data (intermediate dep) & Data (high dep) & Real data \\ [0.5ex] 
+ \hline\hline      
+   \textit{$\tau_2^{[12]}$} &  $0.2412$ & $0.7403$ & $0.9889$ & $0.3161$ \\ 
+  \textit{$\tau_2^{[21]}$} &  $0.2311$ & $0.7316$ & $0.9889$ & $0.2628$ \\ [1ex] 
+ \hline
+\end{tabular}
+\caption{ L-correlation estimates for different datasets}
+\label{table4}
+\end{table}
+
+On the simulated data the interpretation of L-correlations matches with the true dependence. For the real data, the value of L-correlations indicates that the water level and precipitation indicates a weak association between the variables.
+
+\bibliographystyle{plainnat}
+\bibliography{references.bib}
